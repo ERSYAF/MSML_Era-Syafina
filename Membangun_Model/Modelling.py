@@ -3,13 +3,19 @@ print(">>> TES: SKRIP Modelling.py MULAI DI SINI !!! <<<", flush=True)
 import pandas as pd
 import numpy as np
 import ast
+import mlflow
+import mlflow.sklearn
+import argparse
+import joblib
 from pathlib import Path
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-import mlflow
-import joblib
-import argparse
-
+from sklearn.linear_model import LogisticRegression
+from sklearn.datasets import make_classification
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, confusion_matrix
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 def clean_text_for_token(text):
     if isinstance(text, str):
@@ -85,41 +91,44 @@ if __name__ == "__main__":
     dataset_path = Path(args.dataset_path)
 
     mlflow.set_experiment("Movie Recommender - Content Based")
-    mlflow.autolog()  # Aktifkan autolog untuk logging otomatis
+    mlflow.sklearn.autolog()
 
     print(f"MAIN: Mulai proses dengan dataset: {dataset_path}", flush=True)
     movie_data_with_soup = load_data_and_generate_soup(dataset_path)
 
     if movie_data_with_soup is not None and not movie_data_with_soup.empty:
         with mlflow.start_run(run_name="ContentBasedRecommender_Run1"):
-            ngram = (1, 2)
-            min_df = 3
-            max_df = 0.7
-
-            mlflow.log_param("vectorizer", "TF-IDF")
-            mlflow.log_param("ngram_range", ngram)
-            mlflow.log_param("min_df", min_df)
-            mlflow.log_param("max_df", max_df)
-
-            tfidf = TfidfVectorizer(
-                stop_words='english',
-                ngram_range=ngram,
-                min_df=min_df,
-                max_df=max_df
-            )
-
+            tfidf = TfidfVectorizer(stop_words='english', ngram_range=(1, 2), min_df=3, max_df=0.7)
             tfidf_matrix = tfidf.fit_transform(movie_data_with_soup['soup'].fillna(''))
-
-            mlflow.log_metric("tfidf_dim", tfidf_matrix.shape[1])
-            mlflow.log_metric("tfidf_density", tfidf_matrix.nnz / (tfidf_matrix.shape[0] * tfidf_matrix.shape[1]))
 
             cosine_sim_matrix = cosine_similarity(tfidf_matrix, tfidf_matrix)
 
             joblib.dump(tfidf, "tfidf_vectorizer.pkl")
-            np.savez_compressed("cosine_matrix.npz", cosine_sim_matrix=cosine_sim_matrix)
+            np.savez_compressed("cosine_matrix.npz", cosine_matrix=cosine_sim_matrix)
 
             mlflow.log_artifact("tfidf_vectorizer.pkl")
             mlflow.log_artifact("cosine_matrix.npz")
+
+            X_dummy, y_dummy = make_classification(n_samples=200, n_features=20, random_state=42)
+            X_train, X_test, y_train, y_test = train_test_split(X_dummy, y_dummy, test_size=0.2, random_state=42)
+
+            clf = LogisticRegression()
+            clf.fit(X_train, y_train)
+            y_pred = clf.predict(X_test)
+            acc = accuracy_score(y_test, y_pred)
+
+            mlflow.sklearn.log_model(clf, "dummy_classifier")
+            mlflow.log_metric("accuracy_dummy", acc)
+
+            cm = confusion_matrix(y_test, y_pred)
+            plt.figure(figsize=(6, 5))
+            sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
+            plt.title("Confusion Matrix (Dummy Model)")
+            plt.xlabel("Predicted")
+            plt.ylabel("Actual")
+            plt.tight_layout()
+            plt.savefig("confusion_matrix.png")
+            mlflow.log_artifact("confusion_matrix.png")
 
             indices = pd.Series(movie_data_with_soup.index, index=movie_data_with_soup['title']).drop_duplicates()
             test_movie_title = movie_data_with_soup['title'].iloc[0]

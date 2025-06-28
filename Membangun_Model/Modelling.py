@@ -85,7 +85,7 @@ if __name__ == "__main__":
     dataset_path = Path(args.dataset_path)
 
     mlflow.set_experiment("Movie Recommender - Content Based")
-    mlflow.autolog(disable=True)  
+    mlflow.autolog()  # Aktifkan autolog untuk logging otomatis
 
     print(f"MAIN: Mulai proses dengan dataset: {dataset_path}", flush=True)
     movie_data_with_soup = load_data_and_generate_soup(dataset_path)
